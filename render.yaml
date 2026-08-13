@@ -1,0 +1,58 @@
+# Render Blueprint: provisions everything in one go.
+# In the Render dashboard: New → Blueprint → point at this repo → Apply.
+# https://render.com/docs/blueprint-spec
+databases:
+  - name: feedback-collector-db
+    plan: free
+    databaseName: feedback_collector
+    user: feedback_collector
+
+services:
+  # --- Backend API ---
+  - type: web
+    name: feedback-collector-api
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install && npx prisma generate
+    # Migrations + seed run on every deploy; both are idempotent
+    startCommand: npx prisma migrate deploy && node prisma/seed.js && npm start
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: feedback-collector-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_SIGNUP_CODE
+        sync: false # set your own value in the dashboard after the first deploy
+      - key: CORS_ORIGIN
+        fromService:
+          type: web
+          name: feedback-collector-client
+          property: host
+        # Render only gives the host, not a scheme; the app.js default falls
+        # back to "*" if this needs adjusting to a full https:// URL by hand.
+
+  # --- Frontend, built as static files and served by Render's CDN ---
+  - type: web
+    name: feedback-collector-client
+    runtime: static
+    rootDir: client
+    buildCommand: npm install && npm run build
+    staticPublishPath: build
+    envVars:
+      - key: REACT_APP_API_URL
+        fromService:
+          type: web
+          name: feedback-collector-api
+          property: host
+        # Same host-only caveat: CRA needs the full https://.../api URL, so this
+        # value typically needs a one-time manual fix after first deploy — see
+        # the Deploying to Render section of README.md.
+    routes:
+      # SPA fallback: React Router-style paths must all resolve to index.html
+      - type: rewrite
+        source: /*
+        destination: /index.html

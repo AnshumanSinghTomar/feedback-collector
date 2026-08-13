@@ -24,7 +24,9 @@ const { authenticate, requireAdmin } = require("./middleware/auth");
 
 const app = express();
 
-app.use(cors());
+// Open by default for local/demo use. Set CORS_ORIGIN in production to lock
+// this down to the deployed frontend's URL.
+app.use(cors({ origin: process.env.CORS_ORIGIN || "*" }));
 app.use(express.json());
 
 const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;

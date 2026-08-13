@@ -18,6 +18,7 @@ command you need — see [Run with Docker](#run-with-docker-easiest).
 ---
 
 ## Table of Contents
+- [Deploying to Render](#deploying-to-render)
 - [Run with Docker (easiest)](#run-with-docker-easiest)
 - [Quick Start (manual)](#quick-start-manual)
 - [Detailed Setup](#detailed-setup)
@@ -35,6 +36,64 @@ command you need — see [Run with Docker](#run-with-docker-easiest).
 - [How Key Rules Work](#how-key-rules-work)
 - [Known Limitations](#known-limitations)
 - [Troubleshooting](#troubleshooting)
+
+---
+
+## Deploying to Render
+
+`render.yaml` at the repo root is a
+[Blueprint](https://render.com/docs/blueprint-spec) that provisions everything:
+a free Postgres database, the API, and the frontend as static files on Render's
+CDN. A [free Render account](https://render.com) is all you need — no server
+management, no manual database setup.
+
+### Steps
+
+1. **Fork or push this repo to your own GitHub account** (Render deploys from a
+   repo you own or have access to).
+2. In the Render dashboard: **New → Blueprint**.
+3. Connect the repo. Render reads `render.yaml` and shows three resources:
+   `feedback-collector-db`, `feedback-collector-api`,
+   `feedback-collector-client`.
+4. Click **Apply**. Render provisions the database, then builds and deploys
+   both services. This takes several minutes on the first run.
+5. When prompted for `ADMIN_SIGNUP_CODE` (marked `sync: false` so Render asks
+   rather than picking one for you), enter your own value. `JWT_SECRET` is
+   generated automatically — you never need to see or set it.
+
+### Two things to fix by hand after the first deploy
+
+Render's Blueprint only exposes a service's **host** to other services (e.g.
+`feedback-collector-api.onrender.com`), not the full URL with scheme. Both
+`CORS_ORIGIN` and `REACT_APP_API_URL` need the complete `https://...` address,
+so after the first deploy:
+
+1. Open the **feedback-collector-client** service page, copy its URL.
+2. Open **feedback-collector-api** → Environment, set `CORS_ORIGIN` to that
+   full URL (e.g. `https://feedback-collector-client.onrender.com`), save —
+   this redeploys the API.
+3. Open **feedback-collector-api**, copy its URL and append `/api`.
+4. Open **feedback-collector-client** → Environment, set `REACT_APP_API_URL`
+   to that (e.g. `https://feedback-collector-api.onrender.com/api`).
+5. Trigger **Manual Deploy → Clear build cache & deploy** on the client — Create
+   React App bakes `REACT_APP_*` values into the build at compile time, so a
+   plain redeploy without clearing cache can serve a stale value.
+
+After that, visiting the client URL should show the sign-in screen with working
+Demo Admin / Demo User buttons.
+
+### Notes
+
+- **Free tier sleeps.** Both the free web service and the free Postgres
+  instance spin down after inactivity. The first request after a while sleeps
+  takes 30–60 seconds to wake up — this is normal, not a bug.
+- **Free Postgres expires.** Render's free databases are deleted after 90 days
+  unless upgraded. Fine for a demo; not for anything long-lived.
+- **Rotate secrets before sharing the link widely.** `JWT_SECRET` is generated
+  for you, but pick your own `ADMIN_SIGNUP_CODE` rather than reusing the one in
+  `server/.env.example` or anywhere in this repo's history.
+- **Logs and redeploys** are in each service's dashboard page — useful for
+  diagnosing a failed build without re-running anything locally.
 
 ---
 
