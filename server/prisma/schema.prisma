@@ -1,0 +1,143 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql" // change to "sqlite" if you don't have Postgres locally
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+model User {
+  id       String  @id @default(uuid())
+  name     String
+  email    String  @unique
+  password String
+  role     Role    @default(USER)
+  isActive Boolean @default(true)
+  // Demo accounts are a sandbox: they only ever see each other's forms,
+  // announcements and users, and real accounts never see theirs.
+  isDemo   Boolean @default(false)
+  // Stored server-side so the choice follows the user to any device
+  themeMode String @default("light")
+  // Id of the admin who granted this user ADMIN; that admin may not demote them
+  // again. Plain id rather than a relation to avoid a self-referencing join.
+  promotedById String?
+  createdAt     DateTime             @default(now())
+  feedbacks     Feedback[]
+  forms         Form[]
+  responses     FormResponse[]
+  resetTokens   PasswordResetToken[]
+  assignments   FormAssignment[]
+  sessions      Session[]
+  notifications Notification[]
+}
+
+// One row per issued JWT, so a token can be revoked before it expires
+// (on logout, or on every other device when the password changes).
+model Session {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  userAgent String?
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// In-app alerts: a form becoming available, or a response coming in.
+model Notification {
+  id         String   @id @default(uuid())
+  type       String
+  message    String
+  targetType String?
+  targetId   String?
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+}
+
+model Feedback {
+  id        String   @id @default(uuid())
+  title     String?
+  message   String
+  createdAt DateTime @default(now())
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+}
+
+model Form {
+  id          String           @id @default(uuid())
+  title       String
+  description String?
+  // [{ id, label, type, required, options, condition, deleted }]
+  questions   Json
+  isOpen      Boolean          @default(true)
+  isDraft     Boolean          @default(false)
+  closesAt    DateTime?
+  isAnonymous Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  authorId    String
+  author      User             @relation(fields: [authorId], references: [id])
+  responses   FormResponse[]
+  assignments FormAssignment[]
+}
+
+// No rows for a form means it is visible to everyone
+model FormAssignment {
+  id     String @id @default(uuid())
+  formId String
+  form   Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([formId, userId])
+}
+
+model FormResponse {
+  id           String   @id @default(uuid())
+  answers      Json // { [questionId]: value }
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  formId       String
+  form         Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  respondentId String
+  respondent   User     @relation(fields: [respondentId], references: [id])
+
+  @@unique([formId, respondentId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Actor details are copied in so the trail survives the account being deleted
+model AuditEvent {
+  id         String   @id @default(uuid())
+  action     String
+  actorId    String
+  actorName  String
+  targetType String?
+  targetId   String?
+  detail     String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}
