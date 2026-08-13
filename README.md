@@ -1,340 +1,449 @@
 # Feedback Collector
 
-A full-stack app for collecting structured feedback. Admins build custom forms
-(with conditional questions, deadlines, targeted recipients and anonymous
-responses), publish announcements, and manage users. Regular users fill in the
-forms shared with them and can revise their answers while a form stays open.
+A full-stack feedback platform. Admins build custom forms — conditional
+questions, deadlines, targeted recipients, anonymous responses — publish
+announcements, and manage accounts. Users fill in the forms shared with them and
+can revise their answers while a form stays open.
 
-Built with React (MUI) on the frontend and Express + Prisma + PostgreSQL on the
-backend, secured with JWT auth and two roles.
+React (MUI) frontend, Express + Prisma + PostgreSQL backend, JWT auth with
+revocable sessions and two roles.
+
+**Try it without signing up:** the sign-in screen has *Demo Admin* and
+*Demo User* buttons. They share a sandboxed workspace, so demo forms are
+invisible to real accounts and vice versa.
+
+---
 
 ## Table of Contents
+- [Quick Start](#quick-start)
+- [Detailed Setup](#detailed-setup)
+- [Environment Variables](#environment-variables)
+- [First Login](#first-login)
 - [Features](#features)
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
-- [Prerequisites](#prerequisites)
-- [Backend Setup](#backend-setup)
-- [Frontend Setup](#frontend-setup)
-- [Environment Variables](#environment-variables)
+- [Available Scripts](#available-scripts)
 - [Data Model](#data-model)
 - [API Reference](#api-reference)
 - [Roles & Permissions](#roles--permissions)
-- [Admin Promotion Rules](#admin-promotion-rules)
-- [Conditional Questions](#conditional-questions)
-- [Dark Mode](#dark-mode)
+- [How Key Rules Work](#how-key-rules-work)
 - [Known Limitations](#known-limitations)
 - [Troubleshooting](#troubleshooting)
 
+---
+
+## Quick Start
+
+**Prerequisites:** Node.js 18+, PostgreSQL 12+, and Git.
+
+```bash
+# 1. Clone
+git clone https://github.com/AnshumanSinghTomar/feedback-collector.git
+cd feedback-collector
+
+# 2. Create the database (any Postgres client works)
+#    psql -U postgres -c "CREATE DATABASE feedback_collector;"
+
+# 3. Backend
+cd server
+npm install
+cp .env.example .env          # Windows: copy .env.example .env
+#    → edit .env and set DATABASE_URL + JWT_SECRET
+npx prisma migrate deploy     # creates all 10 tables
+npm run seed                  # creates the admin + demo accounts
+npm run dev                   # http://localhost:5000
+
+# 4. Frontend — in a second terminal
+cd client
+npm install
+cp .env.example .env          # Windows: copy .env.example .env
+npm start                     # http://localhost:3000
+```
+
+Open `http://localhost:3000` and either click **Demo Admin**, or sign in as
+`admin@example.com` / `admin123`.
+
+> Both servers must be running at once. The backend on port 5000 and the
+> frontend on port 3000 are two separate processes in two separate terminals.
+
+---
+
+## Detailed Setup
+
+### 1. Database
+
+Create an empty PostgreSQL database. Nothing else is needed — Prisma creates
+every table.
+
+```sql
+CREATE DATABASE feedback_collector;
+```
+
+No Postgres? Point Prisma at SQLite instead by changing the provider in
+`server/prisma/schema.prisma` to `sqlite` and setting
+`DATABASE_URL="file:./dev.db"`. You'll then need `npx prisma migrate dev`
+rather than `migrate deploy`, since the committed migration is Postgres SQL.
+
+### 2. Backend
+
+```bash
+cd server
+npm install
+```
+
+Copy the env template and fill it in:
+
+```bash
+cp .env.example .env      # Windows: copy .env.example .env
+```
+
+Then apply the schema and seed the starting accounts:
+
+```bash
+npx prisma migrate deploy   # applies migrations to a fresh database
+npm run seed                # admin + two demo accounts
+npm run dev                 # nodemon, restarts on change
+```
+
+You should see `Server running on http://localhost:5000`. Visiting that URL
+directly returns `Feedback Collector API is running.`
+
+### 3. Frontend
+
+```bash
+cd client
+npm install
+cp .env.example .env      # Windows: copy .env.example .env
+npm start
+```
+
+Compiles and opens `http://localhost:3000`.
+
+---
+
+## Environment Variables
+
+### `server/.env`
+| Variable | Required | Purpose |
+|---|---|---|
+| `DATABASE_URL` | yes | Postgres connection string |
+| `PORT` | no | API port, defaults to `5000` |
+| `JWT_SECRET` | yes | Signs session tokens. Use a long random string — anyone holding it can forge logins |
+| `ADMIN_SIGNUP_CODE` | yes | Must be typed on the signup form to create an `ADMIN`. Without it, self-registration can only produce a `USER` |
+
+```dotenv
+DATABASE_URL="postgresql://postgres:yourpassword@localhost:5432/feedback_collector?schema=public"
+PORT=5000
+JWT_SECRET="a-long-random-string-you-generate"
+ADMIN_SIGNUP_CODE="your-own-code"
+```
+
+### `client/.env`
+| Variable | Required | Purpose |
+|---|---|---|
+| `REACT_APP_API_URL` | yes | Backend API base URL |
+
+```dotenv
+REACT_APP_API_URL=http://localhost:5000/api
+```
+
+> `.env` files are gitignored. Only `.env.example` is committed. Never commit
+> real credentials — and note that Create React App bakes `REACT_APP_*` values
+> into the built JS bundle, so never put a secret in `client/.env`.
+
+---
+
+## First Login
+
+`npm run seed` creates three accounts:
+
+| Account | Email | Password | Notes |
+|---|---|---|---|
+| Admin | `admin@example.com` | `admin123` | Change this immediately for anything but local use |
+| Demo Admin | `demo.admin@example.com` | none | Sign in via the **Demo Admin** button |
+| Demo User | `demo.user@example.com` | none | Sign in via the **Demo User** button |
+
+Demo accounts have random unusable passwords — the buttons are the only way in.
+They live in a sandbox: forms and announcements created by the demo admin are
+visible only to the demo user, never to real accounts.
+
+To create your own admin, register normally, pick **Admin**, and enter the
+`ADMIN_SIGNUP_CODE` from `server/.env`.
+
+---
+
 ## Features
 
-**Forms**
-- Drag-free builder: short answer, long answer, 1–5 rating, multiple choice,
-  dropdown, and checkboxes
-- Conditional questions ("show this only if an earlier answer equals X")
-- Optional closing date; forms stop accepting responses automatically once it
-  passes, or immediately if an admin closes them manually
-- Draft state — a form can be saved without being visible to users, then
-  published later
-- Target a form at specific users, or leave it open to everyone
-- Anonymous mode — response author is hidden from the admin's view and from
-  the CSV export
-- Duplicate an existing form, or start from an NPS / Satisfaction / Retro
-  preset
-- Edit a published form; questions that already have answers are preserved
-  (tombstoned, not deleted) so historical responses keep their labels
+**Form builder (admin)**
+- Six question types: short answer, long answer, 1–5 rating, multiple choice,
+  dropdown, checkboxes
+- Conditional questions — reveal a question only when an earlier answer matches
+- Optional closing date; forms auto-close once it passes
+- Draft mode — save without publishing, publish later
+- Target specific recipients, or leave open to everyone
+- Anonymous mode — hides respondent identity in results and CSV
+- Duplicate any form, or start from an NPS / Satisfaction / Retro preset
+- Edit published forms; questions with existing answers are preserved
 
 **Responses**
 - One response per user per form, editable while the form is open
-- Per-question summary: rating averages and option distributions, computed
-  over the full response set
-- "Still waiting on" list of who has been shared the form but has not
-  answered yet (hidden for anonymous forms)
-- CSV export of every response
+- Per-question analytics: rating averages and option distributions
+- "Still waiting on" list of who hasn't answered yet
+- CSV export
 
-**Announcements**
-- Admin-authored board entries with a title and message
-- Keyword and date filtering, newest/oldest sort, pagination
+**Announcements** — admin-authored board with keyword/date filters, sorting and
+pagination.
 
-**Accounts**
-- Register as **USER** or **ADMIN**; admin signup requires a shared code so
-  the role cannot be self-issued
-- Change password from the account menu
-- Forgot-password flow with a single-use, expiring token (printed to the
-  server console — no email service is wired up)
-- Admin panel: promote/demote, activate/deactivate, with activity counts
-- Activity log of every admin action (who did what, to whom, when)
+**Accounts & security**
+- Register as `USER`, or `ADMIN` with the signup code
+- Revocable sessions: sign-out actually invalidates the token server-side
+- Changing your password signs out every other device
+- Password reset via single-use expiring token
+- Login rate limiting (5 failed attempts per 15 minutes)
+- Admin panel: promote, demote, activate, deactivate
+- Activity log of every admin action
 
-**Look and feel**
-- Light and dark mode, toggle in the header, preference remembered
-- Responsive layout, single column on mobile with full-screen dialogs
-- Animated list entries and hover states throughout
+**UI** — light/dark mode saved to your account, responsive down to mobile with
+full-screen dialogs, in-app notification bell, show/hide password toggles.
+
+---
 
 ## Tech Stack
 
 | Layer | Choice |
 |---|---|
-| Frontend | React 18, MUI 9 (`@mui/material`, `@mui/icons-material`), Emotion |
-| Backend | Node.js, Express |
-| Database | PostgreSQL via Prisma ORM |
-| Auth | JSON Web Tokens (`jsonwebtoken`), password hashing via `bcryptjs` |
+| Frontend | React 18, MUI 9, Emotion |
+| Backend | Node.js, Express 4 |
+| Database | PostgreSQL via Prisma 5 |
+| Auth | JWT (`jsonwebtoken`) + `bcryptjs`, sessions tracked in the database |
+
+---
 
 ## Project Structure
 ```
 feedback-collector/
-├── client/                  # React frontend
-│   ├── public/
+├── client/                      # React frontend
+│   ├── public/index.html
 │   └── src/
-│       ├── App.js           # Auth gate: sign in/up/reset + account menu
-│       ├── index.js         # Theme (light/dark) + app bootstrap
-│       ├── pages/
-│       │   └── FeedbackPage.js
+│       ├── index.js             # Theme (light/dark) + app bootstrap
+│       ├── App.js               # Auth screens, app bar, notifications, account
+│       ├── pages/FeedbackPage.js
 │       ├── components/
-│       │   ├── FeedbackForm.js    # FeedbackForm, FormBuilder, FormFiller, ChangePasswordForm
-│       │   ├── FeedbackItem.js    # FeedbackItem, FormItem, ResponseItem, ResponseSummary,
-│       │   │                      # PendingRespondents, AuditItem, UserRow
-│       │   ├── FeedbackList.js    # FeedbackList, FormList, UserList, AuditList, Pagination
+│       │   ├── FeedbackForm.js  # FormBuilder, FormFiller, ChangePasswordForm
+│       │   ├── FeedbackItem.js  # Cards: form, response, summary, user, audit
+│       │   ├── FeedbackList.js  # Lists + pagination
 │       │   └── ModalComponent.js
-│       ├── services/
-│       │   └── feedbackService.js # All API calls + token storage
-│       └── utils/
-│           ├── validation.js
-│           └── formatDate.js
-└── server/                  # Express + Prisma backend
+│       ├── services/feedbackService.js   # Every API call + token storage
+│       └── utils/               # validation.js, formatDate.js
+└── server/                      # Express + Prisma backend
     ├── prisma/
     │   ├── schema.prisma
     │   ├── migrations/
-    │   └── seed.js           # Creates the first ADMIN account
+    │   └── seed.js
     └── src/
-        ├── app.js             # Express app, inline auth router, rate limiter
-        ├── index.js           # Entry point
-        ├── controllers/
-        │   ├── authController.js
-        │   └── feedbackController.js
-        ├── services/
-        │   ├── authService.js     # Users, roles, audit log, password reset
-        │   └── feedbackService.js # Forms, responses, announcements, CSV
-        ├── middleware/
-        │   └── auth.js            # JWT verification + admin guard
-        ├── routes/
-        │   └── feedbackRoutes.js
-        └── utils/
-            └── validation.js
+        ├── index.js             # Entry point
+        ├── app.js               # Express app, auth router, rate limiter
+        ├── controllers/         # authController.js, feedbackController.js
+        ├── services/            # authService.js, feedbackService.js
+        ├── middleware/auth.js   # JWT + session + role guards
+        ├── routes/feedbackRoutes.js
+        └── utils/validation.js
 ```
 
-## Prerequisites
-- Node.js 18+
-- PostgreSQL (or swap the Prisma provider to `sqlite`/`mysql` in
-  `server/prisma/schema.prisma`)
+---
 
-## Backend Setup
-```bash
-cd server
-npm install
-# Edit .env — see Environment Variables below
-npx prisma generate
-npx prisma migrate dev --name init   # first-time setup only
-npm run seed                          # creates the first admin account
-npm run dev
-```
-The API runs on `http://localhost:5000` by default.
+## Available Scripts
 
-Seeded admin: `admin@example.com` / `admin123`. Change the password (or the
-account) before using this anywhere but locally.
+### `server`
+| Command | Description |
+|---|---|
+| `npm run dev` | Start with nodemon (auto-restart) |
+| `npm start` | Start without nodemon |
+| `npm run seed` | Create admin + demo accounts (safe to re-run) |
+| `npx prisma migrate deploy` | Apply migrations to a database |
+| `npm run prisma:studio` | Browse the database in a GUI |
+| `npm run prisma:generate` | Regenerate the Prisma Client after schema edits |
 
-## Frontend Setup
-```bash
-cd client
-npm install
-# Edit .env if your API runs on a different URL
-npm start
-```
-The app runs on `http://localhost:3000` by default.
+### `client`
+| Command | Description |
+|---|---|
+| `npm start` | Dev server on port 3000 |
+| `npm run build` | Production build into `build/` |
+| `npm test` | Run tests |
 
-## Environment Variables
-
-**`server/.env`**
-```dotenv
-DATABASE_URL="postgresql://user:password@localhost:5432/feedback_collector?schema=public"
-PORT=5000
-JWT_SECRET="change-this-to-a-long-random-string"
-ADMIN_SIGNUP_CODE="change-this-too"
-```
-- `JWT_SECRET` — signs and verifies session tokens. Use a long random string;
-  anyone with this value can forge valid sessions.
-- `ADMIN_SIGNUP_CODE` — required on the registration form when signing up as
-  `ADMIN`. Without a matching code, self-registration can only produce a
-  `USER` account.
-
-**`client/.env`**
-```dotenv
-REACT_APP_API_URL=http://localhost:5000/api
-```
+---
 
 ## Data Model
 
-| Model | Purpose |
-|---|---|
-| `User` | Account, role, active flag, and `promotedById` (see [Admin Promotion Rules](#admin-promotion-rules)) |
-| `Feedback` | An announcement board entry |
-| `Form` | A form definition: `questions` (JSON), draft/open/anonymous flags, optional deadline |
-| `FormAssignment` | Which users a form was shared with; no rows means everyone can see it |
-| `FormResponse` | One user's answers to one form (unique per form + respondent) |
-| `PasswordResetToken` | Single-use, hashed, expiring reset tokens |
-| `AuditEvent` | Admin action log; actor name is copied in so it survives account deletion |
+Ten tables, all created by the migration:
 
-`Form.questions` is a JSON array shaped like:
+| Table | Purpose |
+|---|---|
+| `User` | Account, role, active/demo flags, theme preference, `promotedById` |
+| `Session` | One row per issued JWT, so tokens can be revoked before expiry |
+| `Notification` | In-app alerts for new forms and incoming responses |
+| `Form` | Definition: `questions` JSON, draft/open/anonymous flags, deadline |
+| `FormAssignment` | Which users a form targets; no rows means everyone |
+| `FormResponse` | One user's answers to one form (unique per form + respondent) |
+| `Feedback` | An announcement board entry |
+| `PasswordResetToken` | Hashed, single-use, expiring reset tokens |
+| `AuditEvent` | Admin action log; actor name copied in so it survives deletion |
+
+`Form.questions` is JSON shaped like:
 ```json
-[
-  {
-    "id": "uuid",
-    "label": "How satisfied are you?",
-    "type": "rating",
-    "required": true,
-    "options": [],
-    "condition": null,
-    "deleted": false
-  }
-]
+[{
+  "id": "uuid",
+  "label": "How satisfied are you?",
+  "type": "rating",
+  "required": true,
+  "options": [],
+  "condition": { "questionId": "uuid-of-earlier-question", "equals": "Yes" },
+  "deleted": false
+}]
 ```
-`type` is one of `text`, `textarea`, `rating`, `radio`, `select`, `checkbox`.
-`options` is only used by `radio`/`select`/`checkbox`. `condition`, when set,
-is `{ "questionId": "...", "equals": "..." }`. `deleted` marks a question that
-was removed from an edited form but has existing answers — see
-[Known Limitations](#known-limitations).
+`type` ∈ `text | textarea | rating | radio | select | checkbox`. `options` is
+only used by the choice types. `condition` is `null` unless the question is
+conditional. `deleted` marks a question dropped from an edited form that still
+has answers attached.
+
+---
 
 ## API Reference
 
-All endpoints are prefixed with `/api`. Protected endpoints require an
-`Authorization: Bearer <token>` header.
+Base path `/api`. Protected routes need `Authorization: Bearer <token>`.
 
-### Auth (`/auth`)
+### Auth
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
-| POST | `/auth/register` | Public, rate-limited | Register (`role: "USER"` or `"ADMIN"` + `adminCode`) |
-| POST | `/auth/login` | Public, rate-limited | Sign in, returns `{ user, token }` |
-| GET | `/auth/me` | Any user | Current user |
-| POST | `/auth/change-password` | Any user | `{ currentPassword, newPassword }` |
-| POST | `/auth/forgot-password` | Public, rate-limited | Issues a reset token (logged server-side) |
+| POST | `/auth/register` | Public | Register; `role: "ADMIN"` also needs `adminCode` |
+| POST | `/auth/login` | Public, rate-limited | Returns `{ user, token }` |
+| POST | `/auth/demo` | Public | `{ role }` — sign in to a demo account, no credentials |
+| GET | `/auth/me` | Any | Current user |
+| POST | `/auth/logout` | Any | Revokes the current session |
+| GET | `/auth/sessions` | Any | List your active sessions |
+| PATCH | `/auth/preferences` | Any | `{ themeMode }` |
+| POST | `/auth/change-password` | Any | Also signs out all other sessions |
+| POST | `/auth/forgot-password` | Public, rate-limited | Issues a reset token (logged to the server console) |
 | POST | `/auth/reset-password` | Public | `{ token, password }` |
-| GET | `/auth/users` | Admin | List users with activity counts |
-| PATCH | `/auth/users/:id/role` | Admin | `{ role }` — promote or demote |
-| PATCH | `/auth/users/:id/status` | Admin | `{ isActive }` — activate or deactivate |
-| GET | `/auth/audit` | Admin | Paginated admin activity log |
+| GET | `/auth/notifications` | Any | Paginated, with unread count |
+| PATCH | `/auth/notifications/:id/read` | Any | Mark one read |
+| PATCH | `/auth/notifications/read-all` | Any | Mark all read |
+| GET | `/auth/users` | Admin | Users in your workspace |
+| PATCH | `/auth/users/:id/role` | Admin | `{ role }` |
+| PATCH | `/auth/users/:id/status` | Admin | `{ isActive }` |
+| GET | `/auth/audit` | Admin | Admin activity log |
 
-### Announcements (`/feedback`)
+### Announcements
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
-| POST | `/feedback` | Admin | Create an announcement |
-| GET | `/feedback` | Any user | List, supports `?keyword=&date=&sort=&page=&pageSize=` |
-| DELETE | `/feedback/:id` | Admin | Delete an announcement |
+| POST | `/feedback` | Admin | Create |
+| GET | `/feedback` | Any | `?keyword=&date=&sort=&page=&pageSize=` |
+| DELETE | `/feedback/:id` | Admin | Delete |
 
-### Forms (`/feedback/forms`)
+### Forms
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
-| POST | `/feedback/forms` | Admin | Create a form |
-| GET | `/feedback/forms` | Any user | List forms visible to the caller |
-| GET | `/feedback/forms/:id` | Any user | Fetch one form |
-| PUT | `/feedback/forms/:id` | Admin | Replace a form's definition |
-| PATCH | `/feedback/forms/:id` | Admin | `{ isOpen }` and/or `{ isDraft }` |
-| DELETE | `/feedback/forms/:id` | Admin | Delete a form and its responses |
-| POST | `/feedback/forms/:id/responses` | Any user in the audience | Submit or revise an answer set |
-| GET | `/feedback/forms/:id/responses` | Admin | Paginated responses + summary + pending respondents |
-| GET | `/feedback/forms/:id/responses/export` | Admin | Download responses as CSV |
+| POST | `/feedback/forms` | Admin | Create |
+| GET | `/feedback/forms` | Any | Forms visible to you |
+| GET | `/feedback/forms/:id` | Any | Single form |
+| PUT | `/feedback/forms/:id` | Admin | Replace definition |
+| PATCH | `/feedback/forms/:id` | Admin | `{ isOpen }` / `{ isDraft }` |
+| DELETE | `/feedback/forms/:id` | Admin | Delete form + responses |
+| POST | `/feedback/forms/:id/responses` | Audience | Submit or revise answers |
+| GET | `/feedback/forms/:id/responses` | Admin | Responses + summary + pending |
+| GET | `/feedback/forms/:id/responses/export` | Admin | CSV download |
+
+---
 
 ## Roles & Permissions
 
 | Action | USER | ADMIN |
 |---|---|---|
-| Fill in a form shared with them | ✅ | — |
-| Revise their own response while the form is open | ✅ | — |
+| Fill in / revise a form shared with them | ✅ | — |
 | See draft forms | ❌ | ✅ |
-| Create / edit / delete forms | ❌ | ✅ |
-| View responses, summary, pending list, export CSV | ❌ | ✅ |
+| Create, edit, duplicate, delete forms | ❌ | ✅ |
+| View responses, analytics, pending list, CSV | ❌ | ✅ |
 | Post / delete announcements | ❌ | ✅ |
-| Promote, demote, activate, deactivate users | ❌ | ✅ (with limits, below) |
-| View the activity log | ❌ | ✅ |
+| Manage users | ❌ | ✅ (with limits) |
+| View activity log | ❌ | ✅ |
 
-## Admin Promotion Rules
+---
 
-- Self-registration can only produce a `USER` account unless the correct
-  `ADMIN_SIGNUP_CODE` is supplied.
-- An admin **cannot demote the admin who promoted them.** `User.promotedById`
-  records who granted the role; the server rejects a demotion where
-  `actingUser.promotedById === targetId`.
-- An admin **can** demote anyone they promoted themselves — promoting someone
-  does not cost you the ability to demote them later.
-- The last remaining active admin cannot be demoted or deactivated, by anyone,
-  including themselves.
-- Nobody can change their own role or deactivate their own account.
-- Demotion clears `promotedById`; a later promotion is attributed to whoever
-  grants it next.
+## How Key Rules Work
 
-## Conditional Questions
+**Admin promotion** — an admin cannot demote whoever promoted *them*
+(`User.promotedById` records it), but can demote anyone they promoted. The last
+active admin can never be demoted or deactivated, and nobody can change their
+own role.
 
-A question can be set to only appear when an earlier question's answer
-matches a specific value (e.g. "Which car?" only shown if "Do you drive?" was
-answered "Yes"). Rules:
-- A question may only depend on a question that comes **before** it in the
-  form — no forward references, no cycles.
-- Hidden questions are never required: if the condition isn't met, the answer
-  is skipped during validation on both the client and the server.
-- Answers to a question that becomes hidden (because an earlier answer
-  changed) are dropped before saving, so stale values don't linger.
+**Sessions** — every login writes a `Session` row and `authenticate` checks it
+on every request, so sign-out, a password change, or a reset invalidates tokens
+immediately rather than waiting out the 12-hour expiry.
 
-## Dark Mode
+**Conditional questions** — a question may only depend on an earlier one, so
+chains can't loop. Hidden questions are never required, and answers to a
+question that becomes hidden are dropped before saving.
 
-Toggled from the header (and from the sign-in screen) and persisted in
-`localStorage`. The theme is built per-mode in `client/src/index.js` — palette,
-gradients, and surface colours all branch on `mode`, rather than dark mode
-being a CSS overlay on the light theme.
+**Form buckets** — closed takes priority over answered: a form you answered that
+later closed appears under *Closed Feedbacks*, not *Filled Feedbacks*.
+
+**Demo sandbox** — `User.isDemo` splits everything into two workspaces. Filtered
+on forms, announcements, users, notifications and the audit log, and enforced on
+the response endpoint too so a leaked form id can't be answered across the line.
+
+---
 
 ## Known Limitations
 
-These are deliberate trade-offs for a project at this stage, not oversights:
+Deliberate trade-offs, not oversights:
 
-- **No email delivery.** Password reset tokens are generated and logged to the
-  server console; there is no mailer. Wiring up `nodemailer` or a transactional
-  email API is a natural next step.
-- **JWTs are not revocable.** There is no server-side session list, so a
-  token is valid until it expires (12 hours) even if the password is changed
-  or the account is deactivated in between — though `authenticate` does check
-  `isActive` on every request, so a deactivated account is blocked immediately
-  regardless of an unexpired token.
-- **Tokens live in `localStorage`,** which is readable by any script that runs
-  on the page. An httpOnly cookie would be more resistant to XSS but needs
-  CORS credentials and a cookie parser on the server.
-- **Login rate limiting is in-memory.** It resets on server restart and does
-  not share state across multiple server instances. A production deployment
-  behind a load balancer needs a shared store (Redis) instead.
-- **Editing a form tombstones removed questions** rather than deleting them,
-  so existing responses keep a label to render against. Tombstoned questions
-  are excluded from new submissions and from the summary/CSV question list,
-  but they do stay in the stored `questions` JSON indefinitely.
-- **Anonymous forms are hidden-not-erased.** The respondent is still recorded
-  in the database (`FormResponse.respondentId`) so the one-response-per-user
-  rule can be enforced; "anonymous" means the admin's UI and CSV export omit
-  that field, not that it doesn't exist.
-- **The Prisma migration history was patched by hand** during development
-  (schema changes were applied via ad hoc SQL and the migration checksum was
-  re-synced) rather than always generated fresh via `prisma migrate dev`. If
-  you're setting this up on a brand-new database, `npx prisma migrate dev`
-  against the existing `migrations/` folder should apply cleanly — but this
-  hasn't been proven on a database that didn't already go through the manual
-  patching.
+- **No email delivery.** Password reset tokens are printed to the server console.
+  Wiring up `nodemailer` is the natural next step.
+- **Tokens live in `localStorage`,** readable by any script on the page. An
+  httpOnly cookie resists XSS better but needs CORS credentials and a cookie
+  parser.
+- **Rate limiting is in-memory.** It resets on restart and doesn't span multiple
+  server instances; a shared store like Redis is needed behind a load balancer.
+- **Expired `Session` rows are never deleted.** They're filtered out of queries
+  but the table grows; a cleanup job would fix it.
+- **Editing a form tombstones removed questions** rather than deleting them, so
+  old responses keep their labels. They stay in the `questions` JSON forever.
+- **Anonymous forms are hidden, not erased.** `respondentId` is still stored to
+  enforce one-response-per-user; anonymity means the UI and CSV omit it.
+- **Demo accounts are shared.** Every visitor clicking *Demo Admin* lands in the
+  same workspace and sees what other visitors created.
+
+---
 
 ## Troubleshooting
 
-**"The table `public.User` does not exist"** — the Prisma Client was
-generated before running migrations, or a migration didn't apply. Run
-`npx prisma generate` then `npx prisma migrate dev`.
+**`The table 'public.User' does not exist`**
+Migrations haven't run. `npx prisma migrate deploy`, then `npm run seed`.
 
-**`EPERM` on `prisma generate`** — the dev server has the query engine DLL
-open. Stop the backend process, run `prisma generate`, then restart it.
+**`Authentication failed against database server`**
+Wrong credentials in `DATABASE_URL`. Confirm the Postgres user, password, and
+that the database exists.
 
-**401 immediately after signing in** — check that `JWT_SECRET` is identical
-between when the token was issued and now; changing it invalidates every
-existing token.
+**`Can't reach database server at localhost:5432`**
+Postgres isn't running, or is on another port. Check the service and the port in
+`DATABASE_URL`.
 
-**429 on login** — five failed attempts from the same IP + email within 15
-minutes trips the rate limiter. Wait for the `Retry-After` window or restart
-the server to clear the in-memory counter.
+**`EPERM: operation not permitted` on `prisma generate` (Windows)**
+The dev server holds the query engine file open. Stop the backend, run
+`npx prisma generate`, restart.
+
+**Blank white page in the browser**
+A runtime error. Open DevTools (F12) → Console for the actual message. A stale
+bundle sometimes clears with Ctrl+Shift+R.
+
+**Frontend loads but every request fails**
+The backend isn't running, or `REACT_APP_API_URL` is wrong. CRA only reads
+`.env` at startup — restart `npm start` after editing it.
+
+**`429 Too many attempts`**
+Five failed logins for the same IP + email within 15 minutes. Wait it out or
+restart the server to clear the in-memory counter.
+
+**Port already in use**
+Change `PORT` in `server/.env`, or run the frontend on another port with
+`set PORT=3001 && npm start` (Windows) / `PORT=3001 npm start` (macOS/Linux).
