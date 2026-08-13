@@ -12,10 +12,14 @@ revocable sessions and two roles.
 *Demo User* buttons. They share a sandboxed workspace, so demo forms are
 invisible to real accounts and vice versa.
 
+**Zero-setup install:** with Docker installed, `docker compose up` is the only
+command you need — see [Run with Docker](#run-with-docker-easiest).
+
 ---
 
 ## Table of Contents
-- [Quick Start](#quick-start)
+- [Run with Docker (easiest)](#run-with-docker-easiest)
+- [Quick Start (manual)](#quick-start-manual)
 - [Detailed Setup](#detailed-setup)
 - [Environment Variables](#environment-variables)
 - [First Login](#first-login)
@@ -32,9 +36,54 @@ invisible to real accounts and vice versa.
 
 ---
 
-## Quick Start
+## Run with Docker (easiest)
 
-**Prerequisites:** Node.js 18+, PostgreSQL 12+, and Git.
+**Only requirement: [Docker Desktop](https://www.docker.com/products/docker-desktop/).**
+No Node.js, no PostgreSQL, no database setup — Docker starts Postgres, applies
+the migrations, seeds the accounts and runs both servers for you.
+
+```bash
+git clone https://github.com/AnshumanSinghTomar/feedback-collector.git
+cd feedback-collector
+docker compose up
+```
+
+First run takes a few minutes while images download and dependencies install.
+When you see `Compiled successfully!`, open **http://localhost:3000**.
+
+Sign in with the **Demo Admin** button, or `admin@example.com` / `admin123`.
+
+| Command | What it does |
+|---|---|
+| `docker compose up` | Start everything (Ctrl+C to stop) |
+| `docker compose up -d` | Start in the background |
+| `docker compose down` | Stop and remove the containers |
+| `docker compose down -v` | Also delete the database volume — full reset |
+| `docker compose logs -f server` | Tail the API logs |
+| `docker compose up --build` | Rebuild after changing dependencies |
+
+What runs where:
+
+| Service | Port | Notes |
+|---|---|---|
+| `client` | 3000 | React dev server |
+| `server` | 5000 | Express API; runs migrations + seed on startup |
+| `db` | 5432 | PostgreSQL 16; data persists in the `dbdata` volume |
+
+Postgres is published on `5432`, so you can point pgAdmin at
+`localhost:5432` with user `postgres`, password `postgres`, database
+`feedback_collector` if you want to inspect the tables.
+
+> The credentials in `docker-compose.yml` are deliberate throwaways for local
+> use. Anything deployed publicly needs a real `JWT_SECRET` and database
+> password supplied as secrets, not committed values.
+
+---
+
+## Quick Start (manual)
+
+Prefer running things natively, or don't want Docker? This path needs
+**Node.js 18+, PostgreSQL 12+, and Git.**
 
 ```bash
 # 1. Clone
@@ -222,7 +271,9 @@ full-screen dialogs, in-app notification bell, show/hide password toggles.
 ## Project Structure
 ```
 feedback-collector/
+├── docker-compose.yml           # Whole stack: db + api + frontend
 ├── client/                      # React frontend
+│   ├── Dockerfile
 │   ├── public/index.html
 │   └── src/
 │       ├── index.js             # Theme (light/dark) + app bootstrap
@@ -236,6 +287,7 @@ feedback-collector/
 │       ├── services/feedbackService.js   # Every API call + token storage
 │       └── utils/               # validation.js, formatDate.js
 └── server/                      # Express + Prisma backend
+    ├── Dockerfile
     ├── prisma/
     │   ├── schema.prisma
     │   ├── migrations/
@@ -447,3 +499,29 @@ restart the server to clear the in-memory counter.
 **Port already in use**
 Change `PORT` in `server/.env`, or run the frontend on another port with
 `set PORT=3001 && npm start` (Windows) / `PORT=3001 npm start` (macOS/Linux).
+With Docker, edit the left-hand side of the port mappings in
+`docker-compose.yml` (e.g. `"3001:3000"`).
+
+### Docker-specific
+
+**`error during connect` / `docker daemon is not running`**
+Docker Desktop isn't started. Launch it, wait for the whale icon to settle, then
+retry `docker compose up`.
+
+**Port conflicts on 3000, 5000 or 5432**
+Something is already using them — often a local Postgres on 5432 or a previously
+started `npm start`. Stop the other process, or remap ports in
+`docker-compose.yml`.
+
+**Database looks stale or migrations are half-applied**
+Wipe the volume and start clean:
+```bash
+docker compose down -v
+docker compose up
+```
+
+**Changed `package.json` and the container doesn't see it**
+Dependencies are installed at image build time. Rebuild:
+```bash
+docker compose up --build
+```
