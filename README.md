@@ -23,6 +23,8 @@ command you need — see [Run with Docker](#run-with-docker-easiest).
 - [Detailed Setup](#detailed-setup)
 - [Environment Variables](#environment-variables)
 - [First Login](#first-login)
+- [Using the App](#using-the-app)
+- [Making Changes](#making-changes)
 - [Features](#features)
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
@@ -218,6 +220,104 @@ visible only to the demo user, never to real accounts.
 
 To create your own admin, register normally, pick **Admin**, and enter the
 `ADMIN_SIGNUP_CODE` from `server/.env`.
+
+---
+
+## Using the App
+
+A five-minute walkthrough of the whole feature set. Open two browser windows
+(or one normal + one incognito) so you can be admin and user at the same time.
+
+### As an admin
+
+1. Sign in with **Demo Admin**, or `admin@example.com` / `admin123`.
+2. **Create a Form** — the builder is the first panel.
+   - Type a title, e.g. `Team Health Check`.
+   - Click a preset chip (**NPS**, **Satisfaction**, **Retro**) to prefill
+     questions, or build your own.
+   - Add questions with **Add Question**, pick a type per question, and tick
+     **Required** where needed.
+   - For choice types, fill in the options; **Add Option** adds more.
+   - Optional: set **Closes On** to auto-close the form, choose **Recipients**
+     to target specific people (empty = everyone), tick **Hide respondent
+     names** for anonymity, or flip **Keep as draft** to hold it back.
+   - Click **Publish Form**.
+3. The form appears under **Active Feedbacks**. Each card offers:
+   - **Responses** — analytics, individual answers, and who hasn't replied
+   - **CSV** — download all responses as a spreadsheet
+   - **Edit** — reopen it in the builder
+   - **Duplicate** — start a copy as a new draft
+   - **Close** / **Reopen** — stop or resume accepting responses
+   - **Delete** — remove the form and its responses
+4. **Post an Announcement** publishes a message to the Announcements board.
+5. **Users** lets you promote, demote, deactivate and reactivate accounts.
+6. **Activity Log** records every admin action with who and when.
+
+### As a user
+
+1. In the second window, sign in with **Demo User**.
+2. The new form is under **Active Feedbacks** — click **Fill Out**.
+3. Answer and **Submit Response**. Conditional questions appear only once the
+   answer they depend on matches.
+4. The form moves to **Filled Feedbacks**, where **Edit Response** lets you
+   revise it for as long as the form stays open.
+5. The **bell icon** shows a notification for each newly published form.
+
+### Back as the admin
+
+1. Click **Responses** on the form. You'll see per-question analytics — averages
+   for ratings, bar distributions for choice questions — then each individual
+   response, and a **Still waiting on** list of people who haven't answered.
+2. Click **CSV** to export.
+3. Try **Close**, and watch the form move to **Closed Feedbacks** on both sides.
+
+### Other things to try
+
+- **Dark mode** — the sun/moon icon in the header. The choice saves to your
+  account, so it follows you to another browser.
+- **Account** → change your password. Every *other* signed-in session is
+  signed out automatically.
+- **Sign Out**, then confirm the old session is genuinely dead rather than just
+  cleared locally.
+
+---
+
+## Making Changes
+
+### Editing code
+Both dev servers hot-reload. Save a file in `client/src` and the browser
+refreshes; save one in `server/src` and nodemon restarts the API.
+
+### Changing the database schema
+1. Edit `server/prisma/schema.prisma`.
+2. Create and apply a migration:
+   ```bash
+   cd server
+   npx prisma migrate dev --name describe_your_change
+   ```
+   This also regenerates the Prisma Client.
+3. On Windows, stop the backend first if you hit `EPERM` — the running process
+   holds the query engine file open.
+
+With Docker, rebuild afterwards so the image picks up the new client:
+```bash
+docker compose up --build
+```
+
+### Inspecting data
+```bash
+cd server
+npm run prisma:studio      # GUI at http://localhost:5555
+```
+Or connect pgAdmin to `localhost:5432`.
+
+### Pushing your changes
+```bash
+git add -A
+git commit -m "describe what changed"
+git push
+```
+`.env` files are gitignored — keep real credentials out of commits.
 
 ---
 
